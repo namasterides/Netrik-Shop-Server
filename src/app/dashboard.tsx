@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius, shadows } from '@/theme';
 import { LinearGradient } from 'expo-linear-gradient';
+import { syncService } from '@/utils/syncService';
 
 // Mock Data
 const MOCK_TABLES = [
@@ -24,6 +25,19 @@ const getStatusColor = (status: string) => {
 };
 
 export default function DashboardScreen() {
+  const [tables, setTables] = React.useState(MOCK_TABLES);
+
+  React.useEffect(() => {
+    // Listen for real-time updates from syncService
+    const unsubscribe = syncService.subscribeToTableUpdates((tableId, newStatus) => {
+      setTables(prevTables => 
+        prevTables.map(t => t.id === tableId ? { ...t, status: newStatus } : t)
+      );
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const renderTableCard = ({ item, index }: { item: typeof MOCK_TABLES[0], index: number }) => (
     <Animated.View entering={FadeInDown.delay(index * 100).springify()}>
       <TouchableOpacity 
@@ -66,7 +80,7 @@ export default function DashboardScreen() {
         </View>
 
         <FlatList
-          data={MOCK_TABLES}
+          data={tables}
           keyExtractor={(item) => item.id}
           renderItem={renderTableCard}
           contentContainerStyle={styles.listContainer}

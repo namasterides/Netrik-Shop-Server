@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, Pla
 import { useLocalSearchParams, router } from 'expo-router';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius, shadows } from '@/theme';
+import { syncService } from '@/utils/syncService';
 
 // Mock Data for a single table
 const ORDER_ITEMS = [
@@ -14,6 +15,16 @@ const ORDER_ITEMS = [
 
 export default function TableDetailsScreen() {
   const { id } = useLocalSearchParams();
+  const [status, setStatus] = React.useState('Payment Pending');
+
+  React.useEffect(() => {
+    const unsubscribe = syncService.subscribeToTableUpdates((tableId, newStatus) => {
+      if (tableId === id) {
+        setStatus(newStatus);
+      }
+    });
+    return () => unsubscribe();
+  }, [id]);
   
   const subtotal = ORDER_ITEMS.reduce((sum, item) => sum + (item.price * item.qty), 0);
   const tax = subtotal * 0.085;
@@ -32,8 +43,8 @@ export default function TableDetailsScreen() {
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         <Animated.View entering={FadeInDown.duration(600).springify()} style={styles.tableInfo}>
           <Text style={styles.tableNo}>Table 12</Text>
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusText}>Payment Pending</Text>
+          <View style={[styles.statusBadge, status === 'Paid' && styles.statusBadgeSuccess]}>
+            <Text style={[styles.statusText, status === 'Paid' && styles.statusTextSuccess]}>{status}</Text>
           </View>
         </Animated.View>
 
@@ -71,13 +82,19 @@ export default function TableDetailsScreen() {
       </ScrollView>
 
       <Animated.View entering={FadeInUp.delay(400).duration(800).springify()} style={styles.footer}>
-        <TouchableOpacity 
-          style={styles.payButton}
-          activeOpacity={0.8}
-          onPress={() => router.push(`/payment/${id}`)}
-        >
-          <Text style={styles.payButtonText}>Accept Tap to Pay</Text>
-        </TouchableOpacity>
+        {status !== 'Paid' ? (
+          <TouchableOpacity 
+            style={styles.payButton}
+            activeOpacity={0.8}
+            onPress={() => router.push(`/payment/${id}`)}
+          >
+            <Text style={styles.payButtonText}>Accept Tap to Pay</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.paidButton}>
+            <Text style={styles.paidButtonText}>Table Paid ✓</Text>
+          </View>
+        )}
       </Animated.View>
     </SafeAreaView>
   );
@@ -131,10 +148,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(245, 158, 11, 0.3)',
   },
+  statusBadgeSuccess: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
   statusText: {
     ...typography.caption,
     color: colors.warning,
     fontWeight: '600',
+  },
+  statusTextSuccess: {
+    color: colors.success,
   },
   receiptContainer: {
     backgroundColor: colors.surfaceHighlight,
@@ -225,4 +249,17 @@ const styles = StyleSheet.create({
     ...typography.button,
     fontSize: 18,
   },
+  paidButton: {
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  paidButtonText: {
+    ...typography.button,
+    color: colors.success,
+    fontSize: 18,
+  }
 });

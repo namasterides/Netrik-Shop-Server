@@ -34,6 +34,13 @@
             "imageWidth": 76
           }
         }
+      ],
+      [
+        "@stripe/stripe-terminal-react-native",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location for finding readers.",
+          "bluetoothPeripheralUsageDescription": "Allow $(PRODUCT_NAME) to connect to bluetooth readers."
+        }
       ]
     ],
     "experiments": {

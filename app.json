@@ -41,11 +41,24 @@
           "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location for finding readers.",
           "bluetoothPeripheralUsageDescription": "Allow $(PRODUCT_NAME) to connect to bluetooth readers."
         }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "apiBaseUrl": "",
+      "realtimeUrl": "",
+      "stripeLocationId": "",
+      "stripeSimulated": false,
+      "defaultRestaurantCode": ""
     }
   }
 }

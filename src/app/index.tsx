@@ -4,12 +4,16 @@ import { router } from 'expo-router';
 import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withTiming, withRepeat, withSequence, Easing } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius, shadows } from '@/theme';
 import { LinearGradient } from 'expo-linear-gradient';
+import { syncService } from '@/utils/syncService';
+import { appConfig } from '@/utils/config';
 
 const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   
   // Background animation
   const bgOpacity = useSharedValue(0.4);
@@ -25,13 +29,51 @@ export default function LoginScreen() {
     );
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const bootstrap = async () => {
+      try {
+        await syncService.initialize();
+        const session = await syncService.restoreSession();
+        if (session && isActive) {
+          router.replace('/dashboard');
+        }
+      } catch {
+        // Keep the user on the login screen if restore fails.
+      }
+    };
+
+    bootstrap();
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
   const animatedBgStyle = useAnimatedStyle(() => ({
     opacity: bgOpacity.value,
   }));
 
-  const handleLogin = () => {
-    // In a real app, authenticate here. For now, navigate to dashboard
-    router.replace('/dashboard');
+  const handleLogin = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage('');
+
+    try {
+      await syncService.login({
+        credential: email.trim(),
+        password,
+        restaurantCode: appConfig.defaultRestaurantCode || undefined,
+      });
+      router.replace('/dashboard');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Login failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -88,9 +130,16 @@ export default function LoginScreen() {
               style={styles.loginButton}
               onPress={handleLogin}
               activeOpacity={0.8}
+              disabled={isSubmitting}
             >
-              <Text style={styles.loginButtonText}>Access Dashboard</Text>
+              <Text style={styles.loginButtonText}>
+                {isSubmitting ? 'Signing in...' : 'Access Dashboard'}
+              </Text>
             </TouchableOpacity>
+
+            {errorMessage ? (
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            ) : null}
           </Animated.View>
         </View>
       </KeyboardAvoidingView>
@@ -188,5 +237,11 @@ const styles = StyleSheet.create({
   loginButtonText: {
     ...typography.button,
     fontSize: 18,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.danger,
+    marginTop: spacing.md,
+    textAlign: 'center',
   },
 });

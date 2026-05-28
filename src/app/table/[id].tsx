@@ -4,31 +4,49 @@ import { useLocalSearchParams, router } from 'expo-router';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius, shadows } from '@/theme';
 import { syncService } from '@/utils/syncService';
-
-// Mock Data for a single table
-const ORDER_ITEMS = [
-  { id: '1', name: 'Truffle Risotto', qty: 2, price: 34.00 },
-  { id: '2', name: 'Wagyu Ribeye', qty: 1, price: 65.00 },
-  { id: '3', name: 'House Red Wine', qty: 2, price: 28.00 },
-  { id: '4', name: 'Sparkling Water', qty: 1, price: 6.00 },
-];
+import { formatCurrency } from '@/utils/format';
+import { TableDetails } from '@/types/server';
 
 export default function TableDetailsScreen() {
   const { id } = useLocalSearchParams();
-  const [status, setStatus] = React.useState('Payment Pending');
+  const [table, setTable] = React.useState<TableDetails | null>(null);
+  const [status, setStatus] = React.useState('');
+  const [errorMessage, setErrorMessage] = React.useState('');
+  const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
-    const unsubscribe = syncService.subscribeToTableUpdates((tableId, newStatus) => {
-      if (tableId === id) {
-        setStatus(newStatus);
+    const loadTable = async () => {
+      setIsLoading(true);
+      setErrorMessage('');
+
+      try {
+        const details = await syncService.getTableDetails(id as string);
+        setTable(details);
+        setStatus(details.status);
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to load table.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadTable();
+
+    const unsubscribe = syncService.subscribeToTableUpdates((update) => {
+      if (update.id === id) {
+        setStatus((current) => update.status ?? current);
       }
     });
     return () => unsubscribe();
   }, [id]);
-  
-  const subtotal = ORDER_ITEMS.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const tax = subtotal * 0.085;
-  const total = subtotal + tax;
+
+  const items = table?.items ?? [];
+  const subtotal =
+    table?.billing?.subtotal ??
+    (items.length ? items.reduce((sum, item) => sum + item.price * item.qty, 0) : undefined);
+  const tax = table?.billing?.tax;
+  const total = table?.billing?.total;
+  const currency = table?.billing?.currency ?? 'USD';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -42,9 +60,11 @@ export default function TableDetailsScreen() {
 
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
         <Animated.View entering={FadeInDown.duration(600).springify()} style={styles.tableInfo}>
-          <Text style={styles.tableNo}>Table 12</Text>
+          <Text style={styles.tableNo}>{table?.tableNo || 'Table'}</Text>
           <View style={[styles.statusBadge, status === 'Paid' && styles.statusBadgeSuccess]}>
-            <Text style={[styles.statusText, status === 'Paid' && styles.statusTextSuccess]}>{status}</Text>
+            <Text style={[styles.statusText, status === 'Paid' && styles.statusTextSuccess]}>
+              {status || '--'}
+            </Text>
           </View>
         </Animated.View>
 
@@ -53,43 +73,60 @@ export default function TableDetailsScreen() {
             <Text style={styles.receiptTitle}>Order Receipt</Text>
           </View>
           
-          {ORDER_ITEMS.map((item, index) => (
+          {items.map((item) => (
             <View key={item.id} style={styles.orderItem}>
               <View style={styles.itemLeft}>
                 <Text style={styles.itemQty}>{item.qty}x</Text>
                 <Text style={styles.itemName}>{item.name}</Text>
               </View>
-              <Text style={styles.itemPrice}>${(item.price * item.qty).toFixed(2)}</Text>
+              <Text style={styles.itemPrice}>
+                {formatCurrency(item.price * item.qty, currency)}
+              </Text>
             </View>
           ))}
+
+          {!items.length && !isLoading ? (
+            <Text style={styles.emptyText}>{errorMessage || 'No items yet.'}</Text>
+          ) : null}
 
           <View style={styles.divider} />
           
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>${subtotal.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(subtotal, currency)}</Text>
           </View>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Tax (8.5%)</Text>
-            <Text style={styles.summaryValue}>${tax.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(tax, currency)}</Text>
           </View>
           
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalValue}>${total.toFixed(2)}</Text>
+            <Text style={styles.totalValue}>{formatCurrency(total, currency)}</Text>
           </View>
         </Animated.View>
       </ScrollView>
 
       <Animated.View entering={FadeInUp.delay(400).duration(800).springify()} style={styles.footer}>
         {status !== 'Paid' ? (
-          <TouchableOpacity 
-            style={styles.payButton}
-            activeOpacity={0.8}
-            onPress={() => router.push(`/payment/${id}`)}
-          >
-            <Text style={styles.payButtonText}>Accept Tap to Pay</Text>
-          </TouchableOpacity>
+          <View>
+            <TouchableOpacity
+              style={styles.splitButton}
+              activeOpacity={0.8}
+              onPress={() => router.push(`/split/${id}`)}
+              disabled={isLoading || !table}
+            >
+              <Text style={styles.splitButtonText}>Split Bill</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.payButton}
+              activeOpacity={0.8}
+              onPress={() => router.push(`/payment/${id}`)}
+              disabled={isLoading || !table}
+            >
+              <Text style={styles.payButtonText}>Accept Tap to Pay</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
           <View style={styles.paidButton}>
             <Text style={styles.paidButtonText}>Table Paid ✓</Text>
@@ -249,6 +286,20 @@ const styles = StyleSheet.create({
     ...typography.button,
     fontSize: 18,
   },
+  splitButton: {
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  splitButtonText: {
+    ...typography.button,
+    fontSize: 18,
+    color: colors.text,
+  },
   paidButton: {
     backgroundColor: colors.surfaceHighlight,
     borderRadius: borderRadius.lg,
@@ -261,5 +312,11 @@ const styles = StyleSheet.create({
     ...typography.button,
     color: colors.success,
     fontSize: 18,
-  }
+  },
+  emptyText: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
 });

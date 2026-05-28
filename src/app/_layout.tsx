@@ -30,6 +30,7 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="dashboard" />
           <Stack.Screen name="table/[id]" options={{ presentation: 'card' }} />
+          <Stack.Screen name="split/[id]" options={{ presentation: 'card' }} />
           <Stack.Screen name="payment/[id]" options={{ presentation: 'modal' }} />
         </Stack>
       </ThemeProvider>

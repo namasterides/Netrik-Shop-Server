@@ -1,19 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, SafeAreaView, Platform, StatusBar, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius, shadows } from '@/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { syncService } from '@/utils/syncService';
-
-// Mock Data
-const MOCK_TABLES = [
-  { id: '1', tableNo: 'Table 4', status: 'Payment Pending', amount: '$42.50', time: '5m ago' },
-  { id: '2', tableNo: 'Table 12', status: 'Ordered', amount: '$112.00', time: '12m ago' },
-  { id: '3', tableNo: 'Table 7', status: 'Needs Attention', amount: '-', time: '1m ago' },
-  { id: '4', tableNo: 'Table 2', status: 'Dining', amount: '$85.00', time: '45m ago' },
-  { id: '5', tableNo: 'Table 9', status: 'Dining', amount: '$34.00', time: '30m ago' },
-];
+import { formatCurrency, formatRelativeTime } from '@/utils/format';
+import { TableSummary } from '@/types/server';
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -25,20 +18,49 @@ const getStatusColor = (status: string) => {
 };
 
 export default function DashboardScreen() {
-  const [tables, setTables] = React.useState(MOCK_TABLES);
+  const [tables, setTables] = React.useState<TableSummary[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [errorMessage, setErrorMessage] = React.useState('');
+
+  const loadTables = React.useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage('');
+
+    try {
+      const data = await syncService.getActiveTables();
+      setTables(data);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to load tables.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   React.useEffect(() => {
-    // Listen for real-time updates from syncService
-    const unsubscribe = syncService.subscribeToTableUpdates((tableId, newStatus) => {
-      setTables(prevTables => 
-        prevTables.map(t => t.id === tableId ? { ...t, status: newStatus } : t)
-      );
+    syncService.initialize();
+    loadTables();
+
+    const unsubscribe = syncService.subscribeToTableUpdates((update) => {
+      setTables((prevTables) => {
+        const index = prevTables.findIndex((table) => table.id === update.id);
+        if (index === -1) {
+          return prevTables;
+        }
+
+        const next = [...prevTables];
+        next[index] = { ...next[index], ...update };
+        return next;
+      });
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loadTables]);
 
-  const renderTableCard = ({ item, index }: { item: typeof MOCK_TABLES[0], index: number }) => (
+  const renderTableCard = ({ item, index }: { item: TableSummary; index: number }) => {
+    const amountLabel = formatCurrency(item.amount, item.currency);
+    const timeLabel = item.timeLabel || formatRelativeTime(item.startedAt ?? item.updatedAt);
+
+    return (
     <Animated.View entering={FadeInDown.delay(index * 100).springify()}>
       <TouchableOpacity 
         style={styles.card}
@@ -52,7 +74,7 @@ export default function DashboardScreen() {
         />
         <View style={styles.cardHeader}>
           <Text style={styles.tableNo}>{item.tableNo}</Text>
-          <Text style={styles.time}>{item.time}</Text>
+          <Text style={styles.time}>{timeLabel}</Text>
         </View>
         
         <View style={styles.cardFooter}>
@@ -60,11 +82,24 @@ export default function DashboardScreen() {
             <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
             <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>{item.status}</Text>
           </View>
-          <Text style={styles.amount}>{item.amount}</Text>
+          <Text style={styles.amount}>{amountLabel}</Text>
         </View>
       </TouchableOpacity>
     </Animated.View>
-  );
+    );
+  };
+
+  const renderEmptyState = () => {
+    const message = isLoading
+      ? 'Loading tables...'
+      : errorMessage || 'No active tables yet.';
+
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyText}>{message}</Text>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -85,6 +120,14 @@ export default function DashboardScreen() {
           renderItem={renderTableCard}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              tintColor={colors.primary}
+              refreshing={isLoading}
+              onRefresh={loadTables}
+            />
+          }
+          ListEmptyComponent={renderEmptyState}
         />
       </View>
     </SafeAreaView>
@@ -181,5 +224,13 @@ const styles = StyleSheet.create({
   amount: {
     ...typography.h3,
     color: colors.text,
+  },
+  emptyState: {
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+  },
+  emptyText: {
+    ...typography.caption,
+    color: colors.textMuted,
   },
 });

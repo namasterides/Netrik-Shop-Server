@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Dimensions, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Dimensions } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import Animated, { 
   useSharedValue, 
@@ -14,15 +14,24 @@ import Animated, {
 import { colors, typography, spacing, shadows } from '@/theme';
 import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
 import { syncService } from '@/utils/syncService';
+import { appConfig } from '@/utils/config';
+import { formatCurrency } from '@/utils/format';
+import { PaymentContext } from '@/types/server';
 
 const { width } = Dimensions.get('window');
 
 type PaymentStatus = 'initializing' | 'waiting_for_card' | 'processing' | 'success' | 'error';
 
 export default function TapToPayScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, amount, guestId, currency } = useLocalSearchParams();
   const [status, setStatus] = useState<PaymentStatus>('initializing');
   const [errorMessage, setErrorMessage] = useState('');
+  const [paymentContext, setPaymentContext] = useState<PaymentContext | null>(null);
+  const statusRef = useRef<PaymentStatus>('initializing');
+
+  const amountOverride = parseNumberParam(amount);
+  const guestIdParam = normalizeStringParam(guestId);
+  const currencyOverride = normalizeStringParam(currency);
   
   const { discoverReaders, connectLocalMobileReader, collectPaymentMethod, processPayment, cancelCollectPaymentMethod } = useStripeTerminal();
 
@@ -33,40 +42,83 @@ export default function TapToPayScreen() {
   const phoneY = useSharedValue(0);
 
   useEffect(() => {
-    startPaymentFlow();
+    statusRef.current = status;
+  }, [status]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const init = async () => {
+      try {
+        const context = await syncService.getPaymentContext(id as string, guestIdParam || undefined);
+        const mergedContext: PaymentContext = {
+          ...context,
+          amount: amountOverride ?? context.amount,
+          currency: currencyOverride ?? context.currency,
+          guestId: guestIdParam || context.guestId,
+        };
+        if (!isActive) {
+          return;
+        }
+
+        setPaymentContext(mergedContext);
+        await startPaymentFlow(mergedContext);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setErrorMessage(error instanceof Error ? error.message : 'Payment failed.');
+        setStatus('error');
+      }
+    };
+
+    init();
+
     return () => {
-      // Cleanup: Cancel if we unmount while waiting
-      if (status === 'waiting_for_card') {
+      isActive = false;
+      if (statusRef.current === 'waiting_for_card') {
         cancelCollectPaymentMethod();
       }
     };
-  }, []);
+  }, [id]);
 
-  const startPaymentFlow = async () => {
+  const startPaymentFlow = async (context: PaymentContext) => {
     try {
       setStatus('initializing');
-      
+      setErrorMessage('');
+
+      if (!appConfig.stripeLocationId) {
+        throw new Error('Stripe location ID is not configured.');
+      }
+
       // 1. Discover local mobile reader (NFC chip on device)
       const { readers, error: discoverError } = await discoverReaders({
         discoveryMethod: 'localMobile',
-        simulated: true, // SET TO FALSE FOR PRODUCTION WITH REAL CARDS
+        simulated: appConfig.stripeSimulated,
       });
 
       if (discoverError || !readers?.length) {
-        throw new Error(discoverError?.message || 'Could not find NFC reader. Are you on a physical device?');
+        throw new Error(discoverError?.message || 'No NFC reader detected on this device.');
       }
 
       // 2. Connect to the reader
       const { error: connectError } = await connectLocalMobileReader({
         reader: readers[0],
-        locationId: 'tml_xxxx', // REPLACE with your actual Stripe Terminal Location ID
+        locationId: appConfig.stripeLocationId,
       });
 
-      if (connectError) throw new Error(connectError.message);
+      if (connectError) {
+        throw new Error(connectError.message);
+      }
 
-      // 3. Get Payment Intent from our backend
-      // Assuming amount is fetched from order details, hardcoding 141.10 for demo
-      const clientSecret = await syncService.fetchPaymentIntentClientSecret(id as string, 14110);
+      // 3. Get Payment Intent from backend
+      const clientSecret = await syncService.fetchPaymentIntentClientSecret({
+        tableId: id as string,
+        amount: context.amount,
+        currency: context.currency,
+        guestId: context.guestId,
+      });
       
       setStatus('waiting_for_card');
       startWaitingAnimations();
@@ -76,7 +128,9 @@ export default function TapToPayScreen() {
         paymentIntent: clientSecret,
       });
 
-      if (collectError) throw new Error(collectError.message);
+      if (collectError) {
+        throw new Error(collectError.message);
+      }
 
       setStatus('processing');
       stopAnimations();
@@ -85,38 +139,31 @@ export default function TapToPayScreen() {
       if (paymentIntent) {
         const { error: processError } = await processPayment({ paymentIntent });
         
-        if (processError) throw new Error(processError.message);
+        if (processError) {
+          throw new Error(processError.message);
+        }
 
-        // Success!
-        await handleSuccess();
+        await handleSuccess(paymentIntent.id);
       }
-    } catch (e: any) {
-      console.warn("Stripe Error:", e);
-      // For demo purposes, we will fallback to the visual mockup if Stripe fails 
-      // (since this is likely running on an emulator without real backend keys yet)
-      startVisualMockup();
+    } catch (error) {
+      stopAnimations();
+      setErrorMessage(error instanceof Error ? error.message : 'Payment failed.');
+      setStatus('error');
     }
   };
 
-  const startVisualMockup = () => {
-    setStatus('waiting_for_card');
-    startWaitingAnimations();
-  };
-
-  const handleSimulateTap = async () => {
-    if (status !== 'waiting_for_card') return;
-    setStatus('processing');
-    stopAnimations();
-    
-    setTimeout(async () => {
-      await handleSuccess();
-    }, 1500);
-  };
-
-  const handleSuccess = async () => {
+  const handleSuccess = async (paymentIntentId?: string) => {
     setStatus('success');
-    // Notify the main web app via backend
-    await syncService.updatePaymentStatus(id as string, 'Paid');
+
+    try {
+      await syncService.updatePaymentStatus({
+        tableId: id as string,
+        status: 'Paid',
+        paymentIntentId,
+      });
+    } catch {
+      // If sync fails, the offline queue will retry when back online.
+    }
     
     setTimeout(() => {
       router.dismissAll();
@@ -174,14 +221,24 @@ export default function TapToPayScreen() {
             {status === 'waiting_for_card' && 'Hold card near device'}
             {status === 'processing' && 'Processing...'}
             {status === 'success' && 'Payment Approved'}
+            {status === 'error' && 'Payment Error'}
           </Text>
-          <Text style={styles.amount}>$141.10</Text>
+          <Text style={styles.amount}>
+            {formatCurrency(paymentContext?.amount, paymentContext?.currency ?? 'USD')}
+          </Text>
+          {status === 'error' ? (
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          ) : null}
         </Animated.View>
 
         <TouchableOpacity 
           style={styles.animationContainer} 
           activeOpacity={1} 
-          onPress={handleSimulateTap} // Fallback to manual trigger for demo
+          onPress={
+            status === 'error' && paymentContext
+              ? () => startPaymentFlow(paymentContext)
+              : undefined
+          }
         >
           {status === 'waiting_for_card' && (
             <>
@@ -211,16 +268,30 @@ export default function TapToPayScreen() {
             </Animated.View>
           )}
         </TouchableOpacity>
-
-        {status === 'waiting_for_card' && (
-          <Text style={styles.instructionText}>
-            Tap anywhere on screen to simulate a successful card tap (Demo mode)
-          </Text>
-        )}
       </View>
     </SafeAreaView>
   );
 }
+
+const parseNumberParam = (value: string | string[] | undefined) => {
+  if (!value) {
+    return undefined;
+  }
+
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = Number(raw);
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
+
+const normalizeStringParam = (value: string | string[] | undefined) => {
+  if (!value) {
+    return undefined;
+  }
+
+  const raw = Array.isArray(value) ? value[0] : value;
+  const trimmed = raw.trim();
+  return trimmed.length ? trimmed : undefined;
+};
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -300,6 +371,11 @@ const styles = StyleSheet.create({
     ...typography.caption,
     textAlign: 'center',
     opacity: 0.5,
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.danger,
+    marginTop: spacing.sm,
   },
   spinnerContainer: {
     alignItems: 'center',

@@ -77,7 +77,10 @@ export default function TableDetailsScreen() {
             <View key={item.id} style={styles.orderItem}>
               <View style={styles.itemLeft}>
                 <Text style={styles.itemQty}>{item.qty}x</Text>
-                <Text style={styles.itemName}>{item.name}</Text>
+                <View>
+                  <Text style={styles.itemName}>{item.name}</Text>
+                  <Text style={styles.itemStatus}>Preparing</Text>
+                </View>
               </View>
               <Text style={styles.itemPrice}>
                 {formatCurrency(item.price * item.qty, currency)}
@@ -87,7 +90,12 @@ export default function TableDetailsScreen() {
 
           {!items.length && !isLoading ? (
             <Text style={styles.emptyText}>{errorMessage || 'No items yet.'}</Text>
-          ) : null}
+          ) : (
+            <View style={styles.notesContainer}>
+              <Text style={styles.notesLabel}>Notes:</Text>
+              <Text style={styles.notesText}>Extra spicy, no onions please.</Text>
+            </View>
+          )}
 
           <View style={styles.divider} />
           
@@ -98,6 +106,10 @@ export default function TableDetailsScreen() {
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Tax (8.5%)</Text>
             <Text style={styles.summaryValue}>{formatCurrency(tax, currency)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Service Charge</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(subtotal ? subtotal * 0.1 : 0, currency)}</Text>
           </View>
           
           <View style={styles.totalRow}>
@@ -110,6 +122,23 @@ export default function TableDetailsScreen() {
       <Animated.View entering={FadeInUp.delay(400).duration(800).springify()} style={styles.footer}>
         {status !== 'Paid' ? (
           <View>
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
+                <Text style={styles.actionButtonText}>Add Item</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
+                <Text style={styles.actionButtonText}>Kitchen Update</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
+                <Text style={styles.actionButtonText}>Mark Served</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionButton} onPress={() => {}}>
+                <Text style={styles.actionButtonText}>Print Receipt</Text>
+              </TouchableOpacity>
+            </View>
+
             <TouchableOpacity
               style={styles.splitButton}
               activeOpacity={0.8}
@@ -218,7 +247,7 @@ const styles = StyleSheet.create({
   },
   itemLeft: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     flex: 1,
   },
   itemQty: {
@@ -226,14 +255,36 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: '700',
     width: 32,
+    marginTop: 2,
   },
   itemName: {
     ...typography.body,
-    flex: 1,
+  },
+  itemStatus: {
+    ...typography.caption,
+    color: '#8B5CF6',
+    fontSize: 12,
+    marginTop: 2,
   },
   itemPrice: {
     ...typography.body,
     fontWeight: '500',
+  },
+  notesContainer: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: borderRadius.md,
+  },
+  notesLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: 4,
+  },
+  notesText: {
+    ...typography.body,
+    fontSize: 14,
+    fontStyle: 'italic',
   },
   divider: {
     height: 1,
@@ -274,6 +325,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: colors.surfaceHighlight,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  actionButtonText: {
+    ...typography.caption,
+    color: colors.text,
+    fontWeight: '600',
   },
   payButton: {
     backgroundColor: colors.primary,

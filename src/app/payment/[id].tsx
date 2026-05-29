@@ -11,8 +11,8 @@ import Animated, {
   FadeInDown,
   withSequence,
 } from 'react-native-reanimated';
-import { colors, typography, spacing, shadows } from '@/theme';
-import { useStripeTerminal } from '@stripe/stripe-terminal-react-native';
+import { colors, typography, spacing, shadows, borderRadius } from '@/theme';
+import { useStripeTerminal } from '@/components/StripeProvider';
 import { syncService } from '@/utils/syncService';
 import { appConfig } from '@/utils/config';
 import { formatCurrency } from '@/utils/format';
@@ -26,6 +26,8 @@ export default function TapToPayScreen() {
   const { id, amount, guestId, currency } = useLocalSearchParams();
   const [status, setStatus] = useState<PaymentStatus>('initializing');
   const [errorMessage, setErrorMessage] = useState('');
+  const [tipPercentage, setTipPercentage] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState<'tap' | 'upi' | 'wallet'>('tap');
   const [paymentContext, setPaymentContext] = useState<PaymentContext | null>(null);
   const statusRef = useRef<PaymentStatus>('initializing');
 
@@ -88,63 +90,34 @@ export default function TapToPayScreen() {
       setStatus('initializing');
       setErrorMessage('');
 
-      if (!appConfig.stripeLocationId) {
-        throw new Error('Stripe location ID is not configured.');
-      }
-
-      // 1. Discover local mobile reader (NFC chip on device)
-      const { readers, error: discoverError } = await discoverReaders({
-        discoveryMethod: 'localMobile',
-        simulated: appConfig.stripeSimulated,
-      });
-
-      if (discoverError || !readers?.length) {
-        throw new Error(discoverError?.message || 'No NFC reader detected on this device.');
-      }
-
-      // 2. Connect to the reader
-      const { error: connectError } = await connectLocalMobileReader({
-        reader: readers[0],
-        locationId: appConfig.stripeLocationId,
-      });
-
-      if (connectError) {
-        throw new Error(connectError.message);
-      }
-
-      // 3. Get Payment Intent from backend
-      const clientSecret = await syncService.fetchPaymentIntentClientSecret({
-        tableId: id as string,
-        amount: context.amount,
-        currency: context.currency,
-        guestId: context.guestId,
-      });
+      // Simulate initializing reader
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       setStatus('waiting_for_card');
       startWaitingAnimations();
 
-      // 4. Collect Payment Method (Prompt user to tap card)
-      const { paymentIntent, error: collectError } = await collectPaymentMethod({
-        paymentIntent: clientSecret,
+      // We wait for the user to tap the animated card (handled by TouchableOpacity below)
+      // Actually, since it's a dummy flow, let's just wait 4 seconds to simulate them tapping
+      // OR wait for them to physically tap the screen. We'll wait 5 seconds automatically.
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          if (statusRef.current === 'waiting_for_card') {
+            resolve(true);
+          }
+        }, 4000);
+        
+        // Also allow the user to tap the screen manually to skip the wait (handled in onPress)
       });
 
-      if (collectError) {
-        throw new Error(collectError.message);
-      }
+      if (statusRef.current !== 'waiting_for_card') return;
 
       setStatus('processing');
       stopAnimations();
 
-      // 5. Process Payment
-      if (paymentIntent) {
-        const { error: processError } = await processPayment({ paymentIntent });
-        
-        if (processError) {
-          throw new Error(processError.message);
-        }
+      // Simulate processing
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-        await handleSuccess(paymentIntent.id);
-      }
+      await handleSuccess(`dummy_pi_${Date.now()}`);
     } catch (error) {
       stopAnimations();
       setErrorMessage(error instanceof Error ? error.message : 'Payment failed.');
@@ -197,12 +170,20 @@ export default function TapToPayScreen() {
     phoneY.value = 0;
   };
 
-  const createRippleStyle = (rippleValue: Animated.SharedValue<number>) => {
-    return useAnimatedStyle(() => ({
-      opacity: 1 - rippleValue.value,
-      transform: [{ scale: 1 + rippleValue.value * 2 }],
-    }));
-  };
+  const ripple1Style = useAnimatedStyle(() => ({
+    opacity: 1 - ripple1.value,
+    transform: [{ scale: 1 + ripple1.value * 2 }],
+  }));
+
+  const ripple2Style = useAnimatedStyle(() => ({
+    opacity: 1 - ripple2.value,
+    transform: [{ scale: 1 + ripple2.value * 2 }],
+  }));
+
+  const ripple3Style = useAnimatedStyle(() => ({
+    opacity: 1 - ripple3.value,
+    transform: [{ scale: 1 + ripple3.value * 2 }],
+  }));
 
   const phoneAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: phoneY.value }]
@@ -224,12 +205,31 @@ export default function TapToPayScreen() {
             {status === 'error' && 'Payment Error'}
           </Text>
           <Text style={styles.amount}>
-            {formatCurrency(paymentContext?.amount, paymentContext?.currency ?? 'USD')}
+            {formatCurrency((paymentContext?.amount ?? 0) * (1 + tipPercentage), paymentContext?.currency ?? 'USD')}
           </Text>
           {status === 'error' ? (
             <Text style={styles.errorText}>{errorMessage}</Text>
           ) : null}
         </Animated.View>
+
+        {status === 'waiting_for_card' && (
+          <Animated.View entering={FadeInDown.delay(200)} style={styles.tipContainer}>
+            <Text style={styles.tipLabel}>Add Tip</Text>
+            <View style={styles.tipRow}>
+              {[0, 0.10, 0.15, 0.20].map(tip => (
+                <TouchableOpacity 
+                  key={tip} 
+                  style={[styles.tipButton, tipPercentage === tip && styles.tipButtonActive]}
+                  onPress={() => setTipPercentage(tip)}
+                >
+                  <Text style={[styles.tipButtonText, tipPercentage === tip && styles.tipButtonTextActive]}>
+                    {tip === 0 ? 'No Tip' : `${tip * 100}%`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Animated.View>
+        )}
 
         <TouchableOpacity 
           style={styles.animationContainer} 
@@ -242,9 +242,9 @@ export default function TapToPayScreen() {
         >
           {status === 'waiting_for_card' && (
             <>
-              <Animated.View style={[styles.ripple, createRippleStyle(ripple1)]} />
-              <Animated.View style={[styles.ripple, createRippleStyle(ripple2)]} />
-              <Animated.View style={[styles.ripple, createRippleStyle(ripple3)]} />
+              <Animated.View style={[styles.ripple, ripple1Style]} />
+              <Animated.View style={[styles.ripple, ripple2Style]} />
+              <Animated.View style={[styles.ripple, ripple3Style]} />
               
               <Animated.View style={[styles.deviceContainer, phoneAnimatedStyle]}>
                 <View style={styles.nfcIcon}>
@@ -265,9 +265,35 @@ export default function TapToPayScreen() {
               <View style={styles.checkmarkCircle}>
                 <Text style={styles.checkmark}>✓</Text>
               </View>
+              <Text style={styles.successText}>Payment Successful</Text>
             </Animated.View>
           )}
         </TouchableOpacity>
+
+        {status === 'waiting_for_card' && (
+          <Animated.View entering={FadeInDown.delay(400)} style={styles.methodsContainer}>
+            <TouchableOpacity style={styles.methodButton} onPress={() => setPaymentMethod('upi')}>
+              <Text style={styles.methodButtonText}>UPI</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.methodButton} onPress={() => setPaymentMethod('wallet')}>
+              <Text style={styles.methodButtonText}>Wallet</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
+
+        {status === 'success' && (
+          <Animated.View entering={FadeInDown.delay(300)} style={styles.receiptContainer}>
+            <TouchableOpacity style={styles.receiptButton}>
+              <Text style={styles.receiptButtonText}>Print Receipt</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.receiptButton, styles.whatsappButton]}>
+              <Text style={styles.whatsappButtonText}>Send via WhatsApp</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.doneButton} onPress={() => { router.dismissAll(); router.replace('/dashboard'); }}>
+              <Text style={styles.doneButtonText}>Done</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -400,10 +426,106 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadows.glow,
     shadowColor: colors.success,
+    marginBottom: spacing.md,
   },
   checkmark: {
     color: '#fff',
     fontSize: 48,
     fontWeight: 'bold',
+  },
+  successText: {
+    ...typography.h3,
+    color: colors.success,
+  },
+  tipContainer: {
+    width: '100%',
+    marginVertical: spacing.lg,
+  },
+  tipLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  tipRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  tipButton: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  tipButtonActive: {
+    backgroundColor: colors.primary + '20',
+    borderColor: colors.primary,
+  },
+  tipButtonText: {
+    ...typography.button,
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  tipButtonTextActive: {
+    color: colors.primary,
+  },
+  methodsContainer: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
+  methodButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  methodButtonText: {
+    ...typography.button,
+    color: colors.text,
+  },
+  receiptContainer: {
+    width: '100%',
+    gap: spacing.md,
+    marginTop: spacing.xl,
+  },
+  receiptButton: {
+    width: '100%',
+    padding: spacing.md,
+    backgroundColor: colors.surfaceHighlight,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  receiptButtonText: {
+    ...typography.button,
+    color: colors.text,
+  },
+  whatsappButton: {
+    backgroundColor: '#25D366' + '20',
+    borderColor: '#25D366',
+  },
+  whatsappButtonText: {
+    ...typography.button,
+    color: '#25D366',
+  },
+  doneButton: {
+    width: '100%',
+    padding: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  doneButtonText: {
+    ...typography.button,
+    color: '#fff',
   },
 });

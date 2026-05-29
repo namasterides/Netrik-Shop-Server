@@ -7,12 +7,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { syncService } from '@/utils/syncService';
 import { formatCurrency, formatRelativeTime } from '@/utils/format';
 import { TableSummary } from '@/types/server';
+import { SymbolView } from 'expo-symbols';
 
 const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'Payment Pending': return colors.warning;
-    case 'Ordered': return colors.primary;
-    case 'Needs Attention': return colors.danger;
+  switch (status?.toLowerCase()) {
+    case 'payment pending': return colors.warning;
+    case 'ready to serve': return colors.primary;
+    case 'occupied': return colors.textMuted;
+    case 'preparing': return '#8B5CF6'; // Purple
+    case 'cleaning': return colors.danger;
+    case 'paid': return colors.success;
     default: return colors.success;
   }
 };
@@ -106,11 +110,47 @@ export default function DashboardScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Good evening,</Text>
-            <Text style={styles.title}>Active Tables</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Active Tables</Text>
+              {isLoading ? (
+                <Animated.View style={styles.syncingIndicator}>
+                  <SymbolView name="arrow.triangle.2.circlepath" size={16} tintColor={colors.primary} />
+                </Animated.View>
+              ) : (
+                <View style={[styles.syncingIndicator, { backgroundColor: colors.success + '20' }]}>
+                  <View style={[styles.syncDot, { backgroundColor: colors.success }]} />
+                  <Text style={styles.syncText}>Live</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.greeting}>Good evening, John</Text>
           </View>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>JS</Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity 
+              style={styles.headerLogoutButton}
+              onPress={async () => {
+                await syncService.logout();
+                router.replace('/');
+              }}
+            >
+              <SymbolView name="rectangle.portrait.and.arrow.right" size={20} tintColor={colors.danger} />
+            </TouchableOpacity>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>JS</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Pending Payments</Text>
+            <Text style={styles.statValue}>
+              {tables.filter(t => t.status?.toLowerCase() === 'payment pending').length}
+            </Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Total Served Today</Text>
+            <Text style={styles.statValue}>14</Text>
           </View>
         </View>
 
@@ -146,18 +186,75 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   greeting: {
-    ...typography.h3,
+    ...typography.body,
     color: colors.textMuted,
-    fontWeight: '500',
+    marginTop: spacing.xs,
   },
   title: {
     ...typography.h1,
-    marginTop: spacing.xs,
+    marginRight: spacing.md,
+  },
+  syncingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  syncDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  syncText: {
+    ...typography.caption,
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.success,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.md,
+    gap: spacing.md,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: colors.surfaceHighlight,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statLabel: {
+    ...typography.caption,
+    fontSize: 12,
+    marginBottom: spacing.xs,
+  },
+  statValue: {
+    ...typography.h2,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerLogoutButton: {
+    marginRight: spacing.md,
+    padding: spacing.sm,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: borderRadius.md,
   },
   avatar: {
     width: 48,

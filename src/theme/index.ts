@@ -2,8 +2,8 @@ export const colors = {
   background: '#0B0D12',
   surface: '#1A1C23',
   surfaceHighlight: '#2A2D3A',
-  primary: '#6366F1', // Indigo
-  primaryDark: '#4F46E5',
+  primary: '#047857', // Emerald 700
+  primaryDark: '#064e3b', // Emerald 900
   success: '#10B981',
   warning: '#F59E0B',
   danger: '#EF4444',

@@ -17,8 +17,8 @@ const normalizeBoolean = (value: unknown, fallback = false) =>
   typeof value === 'boolean' ? value : fallback;
 
 export const appConfig = {
-  apiBaseUrl: normalizeString(extra.apiBaseUrl),
-  realtimeUrl: normalizeString(extra.realtimeUrl),
+  apiBaseUrl: normalizeString(extra.apiBaseUrl || process.env.EXPO_PUBLIC_API_BASE_URL),
+  realtimeUrl: normalizeString(extra.realtimeUrl || process.env.EXPO_PUBLIC_SUPABASE_URL),
   stripeLocationId: normalizeString(extra.stripeLocationId),
   stripeSimulated: normalizeBoolean(extra.stripeSimulated, false),
   defaultRestaurantCode: normalizeString(extra.defaultRestaurantCode),

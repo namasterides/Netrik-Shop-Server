@@ -1,5 +1,5 @@
 import * as Network from 'expo-network';
-
+import { supabase } from '@/utils/supabase';
 import { ApiClient, ApiError } from '@/utils/apiClient';
 import { apiRoutes } from '@/utils/apiRoutes';
 import { appConfig, isApiConfigured, isRealtimeConfigured, isStripeConfigured } from '@/utils/config';
@@ -65,10 +65,23 @@ class SyncService {
   }
 
   async login(payload: LoginPayload) {
-    this.ensureApiConfigured();
+    const { data, error } = await supabase
+      .from('servers')
+      .select('*')
+      .eq('user_id', payload.credential)
+      .eq('password', payload.password)
+      .single();
 
-    const response = await this.api.post<Record<string, unknown>>(apiRoutes.login, payload);
-    const session = normalizeSession(response);
+    if (error || !data) {
+      throw new Error('Invalid Server ID or Password.');
+    }
+
+    const session: Session = {
+      token: `server_token_${data.id}_${Date.now()}`,
+      serverId: data.id,
+      restaurantId: data.restaurant_id,
+      displayName: data.name,
+    };
 
     await saveSession(session);
     this.setSession(session);
@@ -104,17 +117,73 @@ class SyncService {
   }
 
   async getActiveTables(): Promise<TableSummary[]> {
-    this.ensureApiConfigured();
-    const response = await this.api.get<Record<string, unknown> | unknown[]>(apiRoutes.tables);
-    const tables = extractArray(response, ['tables', 'data']);
-    return tables.map(normalizeTableSummary);
+    if (!this.session?.restaurantId) return [];
+
+    const { data: tables } = await supabase
+      .from('rest_tables')
+      .select('*')
+      .eq('restaurant_id', this.session.restaurantId);
+
+    const { data: orders } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('restaurant_id', this.session.restaurantId);
+
+    if (!tables) return [];
+
+    return tables.map(table => {
+      // Find latest order for this table
+      const tableOrders = (orders || []).filter(o => o.table_id === table.id);
+      const activeOrder = tableOrders[tableOrders.length - 1];
+
+      return {
+        id: table.id,
+        tableNo: table.number || '',
+        status: activeOrder?.status || table.status || 'available',
+        amount: activeOrder ? parseFloat(activeOrder.total_with_tip || activeOrder.total || '0') : undefined,
+        currency: 'USD',
+        timeLabel: 'Just now',
+      };
+    });
   }
 
   async getTableDetails(tableId: string): Promise<TableDetails> {
-    this.ensureApiConfigured();
-    const response = await this.api.get<Record<string, unknown>>(apiRoutes.tableDetails(tableId));
-    const table = (response as { table?: Record<string, unknown> }).table ?? response;
-    return normalizeTableDetails(table);
+    const { data: table } = await supabase
+      .from('rest_tables')
+      .select('*')
+      .eq('id', tableId)
+      .single();
+
+    const { data: orders } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('table_id', tableId);
+      
+    const activeOrder = orders?.[orders.length - 1];
+
+    return {
+      id: tableId,
+      tableNo: table?.number || '',
+      status: activeOrder?.status || table?.status || 'available',
+      guestCount: table?.seats || 2,
+      sessionStartTime: activeOrder?.created_at || table?.created_at || new Date().toISOString(),
+      sessionId: activeOrder?.id || '',
+      items: (activeOrder?.items || []).map((item: any) => ({
+        id: item.id || createId(),
+        name: item.name || 'Unknown Item',
+        qty: item.quantity || item.qty || 1,
+        price: item.price || 0,
+        status: 'served',
+      })),
+      billing: {
+        subtotal: parseFloat(activeOrder?.total || '0'),
+        tax: 0,
+        discount: 0,
+        serviceCharge: parseFloat(activeOrder?.tip_amount || '0'),
+        total: parseFloat(activeOrder?.total_with_tip || activeOrder?.total || '0'),
+        currency: 'USD'
+      }
+    };
   }
 
   async getPaymentContext(tableId: string, guestId?: string): Promise<PaymentContext> {
@@ -168,18 +237,53 @@ class SyncService {
     return secret;
   }
 
-  async updatePaymentStatus(payload: PaymentStatusPayload) {
-    await this.executeOrQueue('payment.status', payload, async () => {
-      await this.api.post(apiRoutes.paymentStatus(payload.tableId), payload);
-    });
-
-    this.emitTableUpdate({ id: payload.tableId, status: payload.status });
+  async updatePaymentStatus(payload: {
+    tableId: string;
+    paymentIntentId: string;
+    status: 'success' | 'failed';
+  }): Promise<void> {
+    if (payload.status === 'success') {
+      await supabase
+        .from('orders')
+        .update({
+          payment_status: 'paid',
+          status: 'completed',
+          payment_reference: payload.paymentIntentId,
+          paid_at: new Date().toISOString()
+        })
+        .eq('table_id', payload.tableId);
+        
+      await supabase
+        .from('rest_tables')
+        .update({ status: 'paid' })
+        .eq('id', payload.tableId);
+    }
   }
 
-  async saveSplitBill(payload: SplitBillPayload) {
-    await this.executeOrQueue('split.save', payload, async () => {
-      await this.api.post(apiRoutes.splitBill(payload.tableId), payload);
-    });
+  async saveSplitBill(payload: SplitBillPayload): Promise<void> {
+    await supabase
+      .from('orders')
+      .update({ split_count: payload.guests })
+      .eq('table_id', payload.tableId);
+  }
+
+  async sendWhatsAppReceipt(tableId: string, phone: string): Promise<void> {
+    // In a real app, this would call a Twilio/WhatsApp API
+    console.log(`Sending WhatsApp receipt to ${phone} for table ${tableId}`);
+  }
+
+  async requestKitchenUpdate(tableId: string): Promise<void> {
+    // Just emitting a table update for now
+    this.emitTableUpdate({ id: tableId, status: 'Preparing' });
+  }
+
+  async markTableServed(tableId: string): Promise<void> {
+    await supabase
+      .from('rest_tables')
+      .update({ status: 'occupied' })
+      .eq('id', tableId);
+    
+    this.emitTableUpdate({ id: tableId, status: 'Ready to serve' });
   }
 
   private setSession(session: Session | null) {

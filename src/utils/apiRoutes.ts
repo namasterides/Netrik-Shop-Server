@@ -7,4 +7,7 @@ export const apiRoutes = {
   paymentIntent: '/payments/terminal/payment-intent',
   paymentStatus: (tableId: string) => `/tables/${tableId}/payment/status`,
   splitBill: (tableId: string) => `/tables/${tableId}/split`,
+  whatsappReceipt: (tableId: string) => `/tables/${tableId}/receipt/whatsapp`,
+  updateKitchenStatus: (tableId: string) => `/tables/${tableId}/kitchen/update`,
+  markTableServed: (tableId: string) => `/tables/${tableId}/served`,
 };

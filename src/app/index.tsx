@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
 import { router } from 'expo-router';
+import { Image } from 'expo-image';
 import Animated, { FadeInDown, FadeInUp, useSharedValue, useAnimatedStyle, withTiming, withRepeat, withSequence, Easing } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius, shadows } from '@/theme';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -96,7 +97,11 @@ export default function LoginScreen() {
       >
         <View style={styles.content}>
           <Animated.View entering={FadeInDown.duration(1000).springify()} style={styles.header}>
-            <Text style={styles.title}>Netrik Shop</Text>
+            <Image 
+              source={require('../../assets/images/login-logo.png')} 
+              style={styles.logo} 
+              contentFit="contain"
+            />
             <Text style={styles.subtitle}>Server Terminal</Text>
           </Animated.View>
 
@@ -186,10 +191,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.xxl,
   },
-  title: {
-    ...typography.h1,
-    fontSize: 42,
-    letterSpacing: -1,
+  logo: {
+    width: width * 0.7,
+    height: 80,
   },
   subtitle: {
     ...typography.body,

@@ -4,34 +4,35 @@
     "slug": "Netrik-Shop-Server",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/app-icon.png",
     "scheme": "netrikshopserver",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/app-icon.png"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#ECFDF5",
+        "foregroundImage": "./assets/images/app-icon.png",
+        "backgroundImage": "./assets/images/app-icon.png",
+        "monochromeImage": "./assets/images/app-icon.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.NetrikShopServer"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/app-icon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#ffffff",
           "android": {
-            "image": "./assets/images/splash-icon.png",
-            "imageWidth": 76
+            "image": "./assets/images/splash-logo.png",
+            "imageWidth": 200
           }
         }
       ],
@@ -58,7 +59,12 @@
       "realtimeUrl": "",
       "stripeLocationId": "",
       "stripeSimulated": false,
-      "defaultRestaurantCode": ""
-    }
+      "defaultRestaurantCode": "",
+      "router": {},
+      "eas": {
+        "projectId": "79f47102-3320-4554-a445-e449b5fea099"
+      }
+    },
+    "owner": "bidyadharsahu"
   }
 }

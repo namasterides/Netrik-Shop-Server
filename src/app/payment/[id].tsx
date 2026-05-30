@@ -105,8 +105,6 @@ export default function TapToPayScreen() {
             resolve(true);
           }
         }, 4000);
-        
-        // Also allow the user to tap the screen manually to skip the wait (handled in onPress)
       });
 
       if (statusRef.current !== 'waiting_for_card') return;

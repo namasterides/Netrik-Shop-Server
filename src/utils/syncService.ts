@@ -203,38 +203,60 @@ class SyncService {
   }
 
   async fetchStripeConnectionToken(): Promise<string> {
-    this.ensureApiConfigured();
+    // ⚠️ SECURITY WARNING: Fetching the connection token directly from the frontend using the 
+    // Secret Key is NOT safe for a real production release. 
+    // This is implemented to provide a smooth, zero-setup prototype for your PR team.
+    // Before releasing this APK to real waiters, you must move this fetch request to your Vercel backend.
+    const secretKey = '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';
+    
+    const response = await fetch('https://api.stripe.com/v1/terminal/connection_tokens', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${secretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    });
 
-    if (!isStripeConfigured) {
-      throw new Error('Stripe location ID is not configured.');
+    const data = await response.json();
+    if (!data.secret) {
+      throw new Error(`Failed to get connection token: ${data.error?.message || 'Unknown error'}`);
     }
 
-    const response = await this.api.post<Record<string, unknown>>(apiRoutes.stripeConnectionToken, {});
-    const token =
-      (response as { secret?: string }).secret ||
-      (response as { token?: string }).token ||
-      (response as { connectionToken?: string }).connectionToken;
-
-    if (!token) {
-      throw new Error('Stripe connection token was not returned by the server.');
-    }
-
-    return token;
+    return data.secret;
   }
 
   async fetchPaymentIntentClientSecret(payload: PaymentIntentPayload): Promise<string> {
-    this.ensureApiConfigured();
-    const response = await this.api.post<Record<string, unknown>>(apiRoutes.paymentIntent, payload);
-    const secret =
-      (response as { clientSecret?: string }).clientSecret ||
-      (response as { client_secret?: string }).client_secret ||
-      (response as { secret?: string }).secret;
-
-    if (!secret) {
-      throw new Error('Payment intent client secret missing from server response.');
+    // ⚠️ SECURITY WARNING: Same as above. Do not ship this in production APKs.
+    const secretKey = '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';
+    
+    if (!payload.amount) {
+      throw new Error('Amount is required for PaymentIntent');
     }
 
-    return secret;
+    const amountInCents = Math.round(payload.amount * 100);
+    
+    // URL encoded form body for Stripe API
+    const body = new URLSearchParams();
+    body.append('amount', amountInCents.toString());
+    body.append('currency', payload.currency || 'usd');
+    body.append('payment_method_types[]', 'card_present');
+    body.append('capture_method', 'manual');
+    
+    const response = await fetch('https://api.stripe.com/v1/payment_intents', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${secretKey}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: body.toString()
+    });
+
+    const data = await response.json();
+    if (!data.client_secret) {
+      throw new Error(`Failed to create payment intent: ${data.error?.message || 'Unknown error'}`);
+    }
+
+    return data.client_secret;
   }
 
   async updatePaymentStatus(payload: {

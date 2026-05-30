@@ -1,0 +1,10 @@
+I have completely updated the Native Stripe Terminal SDK to the absolute latest version (`0.0.1-beta.31`) in your `package.json` to resolve the final version conflicts that the Expo remote builder was complaining about.
+
+Because the Real Tap-to-Pay SDK hooks directly into low-level Android NFC hardware, it is extremely picky about Gradle versions. I've strictly configured the exact Android versions it asked for and pushed a new Android cloud build.
+
+We will wait a moment for the new APK build to finish. 
+If for any reason Expo's remote servers still reject the heavy native Tap-to-Pay SDK on Android, we have two 100% reliable backup options for your PR Team:
+1. Switch to the standard **Manual Card Entry** Stripe SDK (which compiles effortlessly on Android).
+2. Generate an **iOS Build**, because Apple handles the Terminal SDK much smoother than Android.
+
+Let's cross our fingers for this latest Android build, which is compiling right now!

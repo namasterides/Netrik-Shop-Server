@@ -37,13 +37,6 @@
         }
       ],
       [
-        "@stripe/stripe-terminal-react-native",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location for finding readers.",
-          "bluetoothPeripheralUsageDescription": "Allow $(PRODUCT_NAME) to connect to bluetooth readers."
-        }
-      ],
-      [
         "expo-secure-store",
         {
           "configureAndroidBackup": true
@@ -57,7 +50,7 @@
     "extra": {
       "apiBaseUrl": "",
       "realtimeUrl": "",
-      "stripeLocationId": "",
+      "stripeLocationId": "tml_GgskXQgsdGQ2pw",
       "stripeSimulated": false,
       "defaultRestaurantCode": "",
       "router": {},
